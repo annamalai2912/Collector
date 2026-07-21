@@ -24,7 +24,7 @@
     }
   ],
   "share_target": {
-    "action": "/api/items",
+    "action": "/api/share",
     "method": "POST",
     "enctype": "application/x-www-form-urlencoded",
     "params": {

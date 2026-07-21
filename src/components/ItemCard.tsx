@@ -39,13 +39,28 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   viewMode,
 }) => {
   const [showAISummary, setShowAISummary] = useState(false);
-  const [bannerSrc, setBannerSrc] = useState<string>(
-    item.thumbnail_url || getFallbackBannerImage(item.platform, item.category)
-  );
-  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const proxyUrl = (rawUrl: string) => {
+    if (!rawUrl) return '';
+    // GitHub og images and Unsplash CDN load fine — skip proxy for those
+    if (
+      rawUrl.startsWith('https://opengraph.githubassets.com') ||
+      rawUrl.startsWith('https://images.unsplash.com')
+    ) {
+      return rawUrl;
+    }
+    return `/api/image-proxy?url=${encodeURIComponent(rawUrl)}`;
+  };
+
+  const getFinalBanner = () => {
+    const raw = item.thumbnail_url;
+    if (!raw) return getFallbackBannerImage(item.platform, item.category);
+    return proxyUrl(raw);
+  };
+
+  const [bannerSrc, setBannerSrc] = useState<string>(getFinalBanner());
 
   useEffect(() => {
-    setBannerSrc(item.thumbnail_url || getFallbackBannerImage(item.platform, item.category));
+    setBannerSrc(getFinalBanner());
   }, [item.thumbnail_url, item.platform, item.category]);
 
   const handleImageError = () => {
