@@ -20,6 +20,9 @@ export function getFallbackBannerImage(platform: string, category: string, repoF
   if (repoFullName) {
     return `https://opengraph.githubassets.com/1/${repoFullName}`;
   }
+  if (platform === 'instagram') {
+    return 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=80';
+  }
   switch (category) {
     case 'AI/ML Tools':
       return 'https://images.unsplash.com/photo-1677442136019-21780efad99a?w=800&auto=format&fit=crop&q=80';
@@ -40,7 +43,12 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
   const unwrapResult = unwrapSocialRedirectUrl(rawTarget);
   const targetUrl = ensureAbsoluteUrl(unwrapResult.cleanUrl);
   const isThreads = extracted.isViaThreads || unwrapResult.isThreads;
-  const platform = isThreads ? 'threads' : extracted.sourcePlatform;
+
+  let platform: ScrapedMetadata['platform'] = isThreads ? 'threads' : extracted.sourcePlatform;
+
+  if (targetUrl.includes('instagram.com')) {
+    platform = 'instagram';
+  }
 
   // Check if target is a GitHub repo first
   if (targetUrl.includes('github.com')) {
@@ -65,7 +73,39 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
     }
   }
 
-  // Generic OpenGraph scraping for non-GitHub links
+  // Instagram Post / Reel Handler
+  if (platform === 'instagram' || targetUrl.includes('instagram.com')) {
+    let postHandle = 'Instagram Resource';
+    try {
+      const pathParts = new URL(targetUrl).pathname.split('/').filter(Boolean);
+      if (pathParts.length >= 2) {
+        postHandle = `Instagram ${pathParts[0] === 'reel' ? 'Reel' : 'Post'} (${pathParts[1]})`;
+      } else if (pathParts.length === 1) {
+        postHandle = `@${pathParts[0]} on Instagram`;
+      }
+    } catch {}
+
+    const title = extracted.cleanNotes || postHandle;
+    const description = extracted.cleanNotes
+      ? `${extracted.cleanNotes} (Saved from Instagram)`
+      : `Instagram media resource. Captured from Instagram for quick exploration.`;
+
+    const category = targetUrl.includes('/reel/') ? 'Reels/Shorts' : 'Design Inspiration';
+    const tags = ['instagram', 'social-media', 'reels', 'design'];
+
+    return {
+      url: targetUrl,
+      title,
+      description,
+      ai_summary: generateAISummary(title, description, targetUrl),
+      thumbnail_url: getFallbackBannerImage('instagram', category),
+      platform: 'instagram',
+      category,
+      tags,
+    };
+  }
+
+  // Generic OpenGraph scraping for non-GitHub & non-Instagram links
   try {
     const options = { url: targetUrl, timeout: 7000 };
     const { result } = await ogs(options);

@@ -74,10 +74,30 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const inputUrlOrText = body.url || body.raw_shared_text || '';
-    const notes = body.notes || '';
-    const screenshot_url = body.screenshot_url || '';
+    let inputUrlOrText = '';
+    let notes = '';
+    let screenshot_url = '';
+    let categoryInput = '';
+    let tagsInput: string[] | undefined = undefined;
+    const contentType = request.headers.get('content-type') || '';
+
+    // Handle Form Data from Mobile PWA Share Targets & JSON from Extensions/API
+    if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      const titleStr = (formData.get('title') as string) || '';
+      const textStr = (formData.get('text') as string) || '';
+      const urlStr = (formData.get('url') as string) || '';
+
+      inputUrlOrText = [titleStr, textStr, urlStr].filter(Boolean).join(' ');
+      notes = [titleStr, textStr].filter(Boolean).join(' — ');
+    } else {
+      const body = await request.json();
+      inputUrlOrText = body.url || body.raw_shared_text || '';
+      notes = body.notes || '';
+      screenshot_url = body.screenshot_url || '';
+      categoryInput = body.category || '';
+      tagsInput = body.tags;
+    }
 
     if (!inputUrlOrText && !screenshot_url) {
       return NextResponse.json({ error: 'URL, text, or screenshot required' }, { status: 400, headers: corsHeaders });
@@ -115,6 +135,10 @@ export async function POST(request: Request) {
         }
       }
 
+      if (contentType.includes('application/x-www-form-urlencoded')) {
+        return NextResponse.redirect(new URL('/?status=saved', request.url), 303);
+      }
+
       return NextResponse.json(
         { item: updatedItem, isDuplicate: true, message: 'Resource already in vault - bumped to top!' },
         { headers: corsHeaders }
@@ -132,8 +156,8 @@ export async function POST(request: Request) {
       thumbnail_url: meta.thumbnail_url,
       screenshot_url: screenshot_url || undefined,
       platform: meta.platform,
-      category: body.category || meta.category,
-      tags: body.tags || meta.tags,
+      category: (categoryInput as any) || meta.category,
+      tags: tagsInput || meta.tags,
       status: 'to_explore',
       is_alive: true,
       notes: notes || undefined,
@@ -164,6 +188,10 @@ export async function POST(request: Request) {
       } catch (e) {
         console.error('Failed to insert into Supabase:', e);
       }
+    }
+
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      return NextResponse.redirect(new URL('/?status=saved', request.url), 303);
     }
 
     return NextResponse.json({ item: newItem, isDuplicate: false }, { headers: corsHeaders });
