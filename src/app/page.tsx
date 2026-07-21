@@ -67,36 +67,17 @@ export default function Home() {
     localStorage.setItem('collector_vault_key', key);
   };
 
-  // Fetch Items with localStorage Merge Protection
+  // 100% Pure Supabase Cloud Fetching
   const loadItems = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const res = await fetch('/api/items');
       if (res.ok) {
         const data = await res.json();
-        const serverItems: VaultItem[] = data.items || [];
-
-        // Load local cache to ensure no newly saved items vanish
-        let localCached: VaultItem[] = [];
-        try {
-          localCached = JSON.parse(localStorage.getItem('collector_user_items') || '[]');
-        } catch {}
-
-        const itemMap = new Map<string, VaultItem>();
-        serverItems.forEach((i) => itemMap.set(i.id, i));
-        localCached.forEach((i) => {
-          if (!itemMap.has(i.id)) itemMap.set(i.id, i);
-        });
-
-        const merged = Array.from(itemMap.values()).sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-
-        setItems(merged);
-        localStorage.setItem('collector_user_items', JSON.stringify(merged));
+        setItems(data.items || []);
       }
     } catch (e) {
-      console.error('Failed to load items:', e);
+      console.error('Failed to load items from Supabase Cloud:', e);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -109,8 +90,8 @@ export default function Home() {
     const handleFocus = () => loadItems(true);
     window.addEventListener('focus', handleFocus);
 
-    // Background poll every 5 seconds for background extension items
-    const pollInterval = setInterval(() => loadItems(true), 5000);
+    // Background poll every 4 seconds for background extension & mobile items
+    const pollInterval = setInterval(() => loadItems(true), 4000);
 
     // Supabase Realtime Postgres Broadcast Channel
     let channel: any = null;
@@ -168,11 +149,7 @@ export default function Home() {
 
   // Item Mutations
   const handleUpdateStatus = async (id: string, newStatus: 'to_explore' | 'explored' | 'archived') => {
-    setItems((prev) => {
-      const updated = prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item));
-      localStorage.setItem('collector_user_items', JSON.stringify(updated));
-      return updated;
-    });
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item)));
     await fetch(`/api/items/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -181,11 +158,7 @@ export default function Home() {
   };
 
   const handleUpdateCategory = async (id: string, newCategory: VaultItem['category']) => {
-    setItems((prev) => {
-      const updated = prev.map((item) => (item.id === id ? { ...item, category: newCategory } : item));
-      localStorage.setItem('collector_user_items', JSON.stringify(updated));
-      return updated;
-    });
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, category: newCategory } : item)));
     await fetch(`/api/items/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -202,29 +175,17 @@ export default function Home() {
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     const { id } = deleteTarget;
-    setItems((prev) => {
-      const updated = prev.filter((item) => item.id !== id);
-      localStorage.setItem('collector_user_items', JSON.stringify(updated));
-      return updated;
-    });
+    setItems((prev) => prev.filter((item) => item.id !== id));
     setDeleteTarget(null);
     await fetch(`/api/items/${id}`, { method: 'DELETE' });
   };
 
   const handleItemAdded = (newItem: VaultItem) => {
-    setItems((prev) => {
-      const updated = [newItem, ...prev];
-      localStorage.setItem('collector_user_items', JSON.stringify(updated));
-      return updated;
-    });
+    setItems((prev) => [newItem, ...prev]);
   };
 
   const handleStarsImported = (imported: VaultItem[]) => {
-    setItems((prev) => {
-      const updated = [...imported, ...prev];
-      localStorage.setItem('collector_user_items', JSON.stringify(updated));
-      return updated;
-    });
+    setItems((prev) => [...imported, ...prev]);
     setActiveTab('repos');
   };
 
@@ -250,7 +211,7 @@ export default function Home() {
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+        (item.tags && item.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
       // Date Range Filtering
       let matchDate = true;
