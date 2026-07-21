@@ -29,10 +29,23 @@ export async function GET(request: Request) {
     try {
       const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
       if (!error && data) {
-        supabaseItems = data as VaultItem[];
+        supabaseItems = data.map((item: any) => {
+          let githubRepo = item.github_repo;
+          if (typeof githubRepo === 'string') {
+            try {
+              githubRepo = JSON.parse(githubRepo);
+            } catch {}
+          }
+          return {
+            ...item,
+            github_repo: githubRepo,
+          };
+        }) as VaultItem[];
+      } else if (error) {
+        console.error('Supabase fetch error:', error);
       }
     } catch (e) {
-      console.error('Supabase query error:', e);
+      console.error('Supabase query exception:', e);
     }
   }
 
@@ -180,10 +193,33 @@ export async function POST(request: Request) {
     currentDiskItems.unshift(newItem);
     saveDiskItems(currentDiskItems);
 
-    // Save to Supabase Cloud Database if configured
+    // Save to Supabase Cloud Database with robust error handling
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('items').insert([newItem]);
+        const supabaseRecord = {
+          id: newItem.id,
+          url: newItem.url,
+          raw_shared_text: newItem.raw_shared_text,
+          title: newItem.title,
+          description: newItem.description,
+          ai_summary: newItem.ai_summary,
+          thumbnail_url: newItem.thumbnail_url,
+          screenshot_url: newItem.screenshot_url,
+          platform: newItem.platform,
+          category: newItem.category,
+          tags: newItem.tags,
+          status: newItem.status,
+          is_alive: newItem.is_alive,
+          notes: newItem.notes,
+          created_at: newItem.created_at,
+          updated_at: newItem.updated_at,
+          github_repo: newItem.github_repo ? JSON.stringify(newItem.github_repo) : null,
+        };
+
+        const { error } = await supabase.from('items').insert([supabaseRecord]);
+        if (error) {
+          console.error('Supabase insert error (fallback active):', error);
+        }
       } catch (e) {
         console.error('Failed to insert into Supabase:', e);
       }
