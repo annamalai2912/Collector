@@ -22,6 +22,7 @@ import { MobileSetupModal } from '@/components/MobileSetupModal';
 import { VaultKeyModal } from '@/components/VaultKeyModal';
 import { Loader2, Bookmark, Plus } from 'lucide-react';
 import { cleanInstagramTitle, decodeHtmlEntities } from '@/lib/utils/htmlDecoder';
+import { canonicalizeUrl } from '@/lib/utils/url';
 
 export default function Home() {
   const [items, setItems] = useState<VaultItem[]>([]);
@@ -182,7 +183,13 @@ export default function Home() {
   };
 
   const handleItemAdded = (newItem: VaultItem) => {
-    setItems((prev) => [newItem, ...prev]);
+    setItems((prev) => {
+      const canonicalNew = canonicalizeUrl(newItem.url || '');
+      const filtered = prev.filter(
+        (item) => item.id !== newItem.id && (canonicalNew === '' || canonicalizeUrl(item.url || '') !== canonicalNew)
+      );
+      return [newItem, ...filtered];
+    });
   };
 
   const handleStarsImported = (imported: VaultItem[]) => {

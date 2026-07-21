@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured, VaultItem } from '@/lib/supabase/client';
 import { fetchUrlMetadata } from '@/lib/metadata/scraper';
 import { getDiskItems, saveDiskItems } from '@/lib/storage/diskStore';
+import { canonicalizeUrl } from '@/lib/utils/url';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,13 +37,20 @@ export async function GET(request: Request) {
     }
   }
 
-  // Merge items from both local disk store and Supabase to guarantee zero data loss
+  // Merge items from both local disk store and Supabase by unique canonical URL & ID
   const itemMap = new Map<string, VaultItem>();
   
-  // Add disk items first (restores all 16 previously saved items!)
-  diskItems.forEach((item) => itemMap.set(item.id, item));
-  // Add/override with Supabase items
-  supabaseItems.forEach((item) => itemMap.set(item.id, item));
+  // Combine all items, prioritizing newest updated_at
+  const allItems = [...diskItems, ...supabaseItems].sort(
+    (a, b) => new Date(b.created_at || b.updated_at).getTime() - new Date(a.created_at || a.updated_at).getTime()
+  );
+
+  allItems.forEach((item) => {
+    const key = item.url ? canonicalizeUrl(item.url) : item.id;
+    if (!itemMap.has(key)) {
+      itemMap.set(key, item);
+    }
+  });
 
   let combinedResults = Array.from(itemMap.values()).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -103,32 +111,52 @@ export async function POST(request: Request) {
     }
 
     let meta = await fetchUrlMetadata(inputUrlOrText);
+    const targetUrl = meta.url || inputUrlOrText;
+    const canonicalTarget = canonicalizeUrl(targetUrl);
 
-    // DUPLICATE AVOIDANCE CHECK
-    const currentDiskItems = getDiskItems();
-    const normalizedTargetUrl = (meta.url || inputUrlOrText).toLowerCase().replace(/\/$/, '');
+    // FETCH ALL EXISTING ITEMS FOR STRICT DUPLICATE CHECK (DISK + SUPABASE)
+    const diskItems = getDiskItems();
+    let supabaseItems: VaultItem[] = [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data } = await supabase.from('items').select('*');
+        if (data) supabaseItems = data as VaultItem[];
+      } catch (e) {
+        console.error('Supabase duplicate check fetch error:', e);
+      }
+    }
 
-    const existingIndex = currentDiskItems.findIndex((item) => {
-      const itemUrl = (item.url || '').toLowerCase().replace(/\/$/, '');
-      return itemUrl === normalizedTargetUrl && itemUrl !== '';
+    // Merge into combined pool
+    const itemMap = new Map<string, VaultItem>();
+    diskItems.forEach((item) => itemMap.set(item.id, item));
+    supabaseItems.forEach((item) => itemMap.set(item.id, item));
+    const allExistingItems = Array.from(itemMap.values());
+
+    // DUPLICATE AVOIDANCE MATCHING
+    const existingItem = allExistingItems.find((item) => {
+      if (!item.url) return false;
+      return canonicalizeUrl(item.url) === canonicalTarget;
     });
 
-    if (existingIndex !== -1) {
-      // Move existing item to top and bump timestamp
-      const existingItem = currentDiskItems[existingIndex];
+    if (existingItem) {
       const updatedItem: VaultItem = {
         ...existingItem,
         updated_at: new Date().toISOString(),
         notes: notes ? (existingItem.notes ? `${existingItem.notes} | ${notes}` : notes) : existingItem.notes,
       };
 
-      currentDiskItems.splice(existingIndex, 1);
-      currentDiskItems.unshift(updatedItem);
-      saveDiskItems(currentDiskItems);
+      // Update disk store
+      const updatedDisk = diskItems.filter((i) => i.id !== existingItem.id && canonicalizeUrl(i.url || '') !== canonicalTarget);
+      updatedDisk.unshift(updatedItem);
+      saveDiskItems(updatedDisk);
 
+      // Update Supabase
       if (isSupabaseConfigured && supabase) {
         try {
-          await supabase.from('items').update({ updated_at: updatedItem.updated_at }).eq('id', existingItem.id);
+          await supabase
+            .from('items')
+            .update({ updated_at: updatedItem.updated_at, notes: updatedItem.notes })
+            .eq('id', existingItem.id);
         } catch (e) {
           console.error('Failed to update Supabase duplicate:', e);
         }
@@ -147,7 +175,7 @@ export async function POST(request: Request) {
     // Create New Item
     const newItem: VaultItem = {
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      url: meta.url || inputUrlOrText,
+      url: targetUrl,
       raw_shared_text: inputUrlOrText,
       title: meta.title || 'Saved Resource',
       description: meta.description || 'Saved resource tool.',
@@ -177,10 +205,10 @@ export async function POST(request: Request) {
     };
 
     // Save to Disk Store (guarantees local persistence)
-    currentDiskItems.unshift(newItem);
-    saveDiskItems(currentDiskItems);
+    diskItems.unshift(newItem);
+    saveDiskItems(diskItems);
 
-    // Save to Supabase Cloud Database if RLS allows
+    // Save to Supabase Cloud Database if configured
     if (isSupabaseConfigured && supabase) {
       try {
         const supabaseRecord = {
