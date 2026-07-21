@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { VaultItem } from '@/lib/supabase/client';
 import { RepoCard } from './RepoCard';
 import { decodeHtmlEntities } from '@/lib/utils/htmlDecoder';
+import { getFallbackBannerImage } from '@/lib/utils/bannerFallback';
 import {
   ExternalLink,
   Github,
@@ -92,7 +93,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   const formattedTitle = decodeHtmlEntities(item.title);
   const formattedDescription = decodeHtmlEntities(item.description || '');
 
-  // Calculate Relative Date Stamp (e.g., "Just now", "2h ago", "Yesterday")
+  // Calculate Relative Date Stamp
   const getRelativeDate = (dateStr: string) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
@@ -105,6 +106,10 @@ export const ItemCard: React.FC<ItemCardProps> = ({
     if (diffSeconds < 172800) return 'Yesterday';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
+
+  const displayImageUrl = imageError || !item.thumbnail_url
+    ? getFallbackBannerImage(item.platform, item.category)
+    : item.thumbnail_url;
 
   return (
     <>
@@ -156,18 +161,16 @@ export const ItemCard: React.FC<ItemCardProps> = ({
             <span>{getRelativeDate(item.created_at)}</span>
           </div>
 
-          {/* High-Resolution Media Thumbnail Image Banner */}
-          {item.thumbnail_url && !imageError && (
-            <div className="relative rounded-lg overflow-hidden border border-[#30363d] bg-[#0d1117] group/img">
-              <img
-                src={item.thumbnail_url}
-                alt={formattedTitle}
-                className="w-full h-36 object-cover group-hover/img:scale-105 transition duration-300 cursor-pointer"
-                onError={() => setImageError(true)}
-                onClick={() => setIsLightboxOpen(true)}
-              />
-            </div>
-          )}
+          {/* Guaranteed High-Resolution Banner Image Container */}
+          <div className="relative rounded-lg overflow-hidden border border-[#30363d] bg-[#0d1117] group/img">
+            <img
+              src={displayImageUrl}
+              alt={formattedTitle}
+              className="w-full h-36 object-cover group-hover/img:scale-105 transition duration-300 cursor-pointer"
+              onError={() => setImageError(true)}
+              onClick={() => setIsLightboxOpen(true)}
+            />
+          </div>
 
           {/* Title & External Link */}
           <div>
@@ -254,13 +257,13 @@ export const ItemCard: React.FC<ItemCardProps> = ({
       </div>
 
       {/* Lightbox Modal for Full-Screen Image View */}
-      {isLightboxOpen && item.thumbnail_url && (
+      {isLightboxOpen && displayImageUrl && (
         <div
           className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setIsLightboxOpen(false)}
         >
           <img
-            src={item.thumbnail_url}
+            src={displayImageUrl}
             alt={formattedTitle}
             className="max-w-full max-h-full rounded-lg object-contain border border-[#30363d] shadow-2xl"
           />
