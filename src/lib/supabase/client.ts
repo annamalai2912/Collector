@@ -1,17 +1,31 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-// Default Supabase Cloud credentials for 100% instant cross-device cloud sync
-const DEFAULT_SUPABASE_URL = 'https://xpmiwaydervbhvrhzriu.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_d51TpKNxMjswJcT2p6vNPA_BQg5WTR-';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xpmiwaydervbhvrhzriu.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 
+  'sb_publishable_d51TpKNxMjswJcT2p6vNPA_BQg5WTR-';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_ANON_KEY;
+// Accept both legacy JWT keys (eyJ...) and new publishable keys (sb_publishable_...)
+const isValidKey = Boolean(
+  supabaseAnonKey && (supabaseAnonKey.startsWith('eyJ') || supabaseAnonKey.startsWith('sb_'))
+);
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured = Boolean(supabaseUrl && isValidKey);
 
-export const supabase = isSupabaseConfigured
-  ? createSupabaseClient(supabaseUrl, supabaseAnonKey)
-  : null;
+export const supabase = (() => {
+  if (!isSupabaseConfigured) return null;
+  try {
+    return createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  } catch (e) {
+    console.warn('Supabase client init failed — running in local-only mode:', e);
+    return null;
+  }
+})();
 
 export interface VaultItem {
   id: string;
