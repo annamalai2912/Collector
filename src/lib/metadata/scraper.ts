@@ -24,6 +24,7 @@ export { getFallbackBannerImage };
 async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
   let realOgImage = '';
   let realOgTitle = '';
+  let realOgDescription = '';
 
   try {
     const res = await fetch(targetUrl, {
@@ -32,6 +33,7 @@ async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
       },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (res.ok) {
@@ -40,33 +42,45 @@ async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
                          html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
       const titleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
                          html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+      const descMatch  = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) ||
+                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
 
-      if (imageMatch && imageMatch[1]) {
-        realOgImage = imageMatch[1].replace(/&amp;/g, '&');
+      if (imageMatch?.[1]) {
+        const rawImg = imageMatch[1].replace(/&amp;/g, '&');
+        // Only trust Instagram CDN image URLs (fbcdn.net / cdninstagram.com)
+        if (rawImg.includes('fbcdn.net') || rawImg.includes('cdninstagram.com') || rawImg.includes('scontent')) {
+          realOgImage = rawImg;
+        }
       }
-      if (titleMatch && titleMatch[1]) {
-        realOgTitle = decodeHtmlEntities(titleMatch[1]);
-      }
+      if (titleMatch?.[1])  realOgTitle = decodeHtmlEntities(titleMatch[1]);
+      if (descMatch?.[1])   realOgDescription = decodeHtmlEntities(descMatch[1]);
     }
   } catch (e) {
     console.error('Instagram meta scrape exception:', e);
   }
 
-  // Build a clean short title from the og:title (strips caption body)
-  const title = cleanNotes
-    ? decodeHtmlEntities(cleanNotes).split(':')[0].trim()
-    : cleanInstagramTitle(realOgTitle);
+  // Build clean title: prefer "AccountName on Instagram" over full caption blob
+  const title = cleanInstagramTitle(realOgTitle) || 'Instagram Post';
 
-  // Build a short readable description
-  const description = realOgTitle
-    ? cleanInstagramDescription(realOgTitle)
-    : cleanNotes
-    ? decodeHtmlEntities(cleanNotes).substring(0, 160)
+  // Build description: prefer the og:description (actual caption), then cleanNotes, then fallback
+  const rawCaption = realOgDescription || cleanNotes || realOgTitle;
+  const description = rawCaption
+    ? cleanInstagramDescription(rawCaption)
     : 'Saved Instagram post.';
 
-  const category = targetUrl.includes('/reel/') ? 'Reels/Shorts' : 'Design Inspiration';
-  const tags = ['instagram', 'social-media', 'reels', 'design'];
-  const finalThumbnail = realOgImage || getFallbackBannerImage('instagram', category);
+  // Use caption + title text to classify category (AI tech post → AI/ML Tools, reel → Reels/Shorts etc)
+  const classifyText = `${realOgTitle} ${realOgDescription} ${cleanNotes} ${targetUrl}`;
+  const { category, tags: autoTags } = autoClassifyCategoryAndTags(title, classifyText, targetUrl);
+
+  // Pick best category: if URL has /reel/ force Reels/Shorts unless AI content detected
+  const finalCategory = targetUrl.includes('/reel/') && category !== 'AI/ML Tools' && category !== 'Embedded/IoT'
+    ? 'Reels/Shorts'
+    : category;
+
+  const tags = Array.from(new Set(['instagram', 'social-media', ...autoTags])).slice(0, 6);
+
+  // Use the og:image if valid, otherwise use a themed fallback (not a random broken CDN URL)
+  const finalThumbnail = realOgImage || getFallbackBannerImage('instagram', finalCategory);
 
   return {
     url: targetUrl,
@@ -75,7 +89,7 @@ async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
     ai_summary: generateAISummary(title, description, targetUrl),
     thumbnail_url: finalThumbnail,
     platform: 'instagram' as const,
-    category: category as any,
+    category: finalCategory as any,
     tags,
   };
 }
