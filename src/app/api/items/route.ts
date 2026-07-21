@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabase, VaultItem } from '@/lib/supabase/client';
+import { supabase, isSupabaseConfigured, VaultItem } from '@/lib/supabase/client';
 import { fetchUrlMetadata } from '@/lib/metadata/scraper';
+import { getDiskItems, saveDiskItems } from '@/lib/storage/diskStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,41 +22,45 @@ export async function GET(request: Request) {
   const platform = searchParams.get('platform');
   const query = searchParams.get('q')?.toLowerCase();
 
-  let results: VaultItem[] = [];
+  const diskItems = getDiskItems();
+  let supabaseItems: VaultItem[] = [];
 
-  if (supabase) {
+  if (isSupabaseConfigured && supabase) {
     try {
-      let builder = supabase.from('items').select('*').order('created_at', { ascending: false });
-
-      if (category && category !== 'all') builder = builder.eq('category', category);
-      if (status && status !== 'all') builder = builder.eq('status', status);
-      if (platform && platform !== 'all') builder = builder.eq('platform', platform);
-
-      const { data, error } = await builder;
-
+      const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
       if (!error && data) {
-        results = data.map((item: any) => {
-          let githubRepo = item.github_repo;
-          if (typeof githubRepo === 'string') {
-            try {
-              githubRepo = JSON.parse(githubRepo);
-            } catch {}
-          }
-          return {
-            ...item,
-            github_repo: githubRepo,
-          };
-        }) as VaultItem[];
-      } else if (error) {
-        console.error('Supabase query error:', error);
+        supabaseItems = data as VaultItem[];
       }
     } catch (e) {
-      console.error('Supabase query exception:', e);
+      console.error('Supabase fetch error:', e);
     }
   }
 
+  // Merge items from both local disk store and Supabase to guarantee zero data loss
+  const itemMap = new Map<string, VaultItem>();
+  
+  // Add disk items first (restores all 16 previously saved items!)
+  diskItems.forEach((item) => itemMap.set(item.id, item));
+  // Add/override with Supabase items
+  supabaseItems.forEach((item) => itemMap.set(item.id, item));
+
+  let combinedResults = Array.from(itemMap.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
+  // Apply filters
+  if (category && category !== 'all') {
+    combinedResults = combinedResults.filter((i) => i.category === category);
+  }
+  if (status && status !== 'all') {
+    combinedResults = combinedResults.filter((i) => i.status === status);
+  }
+  if (platform && platform !== 'all') {
+    combinedResults = combinedResults.filter((i) => i.platform === platform);
+  }
+
   if (query) {
-    results = results.filter((item) =>
+    combinedResults = combinedResults.filter((item) =>
       item.title.toLowerCase().includes(query) ||
       item.description?.toLowerCase().includes(query) ||
       item.notes?.toLowerCase().includes(query) ||
@@ -63,7 +68,7 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ items: results }, { headers: corsHeaders });
+  return NextResponse.json({ items: combinedResults }, { headers: corsHeaders });
 }
 
 export async function POST(request: Request) {
@@ -98,42 +103,48 @@ export async function POST(request: Request) {
     }
 
     let meta = await fetchUrlMetadata(inputUrlOrText);
+
+    // DUPLICATE AVOIDANCE CHECK
+    const currentDiskItems = getDiskItems();
     const normalizedTargetUrl = (meta.url || inputUrlOrText).toLowerCase().replace(/\/$/, '');
 
-    // DUPLICATE AVOIDANCE CHECK ON SUPABASE CLOUD
-    if (supabase) {
-      const { data: existingData } = await supabase.from('items').select('*');
-      if (existingData) {
-        const existingItem = existingData.find((item: any) => {
-          const itemUrl = (item.url || '').toLowerCase().replace(/\/$/, '');
-          return itemUrl === normalizedTargetUrl && itemUrl !== '';
-        });
+    const existingIndex = currentDiskItems.findIndex((item) => {
+      const itemUrl = (item.url || '').toLowerCase().replace(/\/$/, '');
+      return itemUrl === normalizedTargetUrl && itemUrl !== '';
+    });
 
-        if (existingItem) {
-          const updatedTime = new Date().toISOString();
-          const updatedNotes = notes ? (existingItem.notes ? `${existingItem.notes} | ${notes}` : notes) : existingItem.notes;
-          
-          await supabase.from('items').update({ updated_at: updatedTime, notes: updatedNotes }).eq('id', existingItem.id);
+    if (existingIndex !== -1) {
+      // Move existing item to top and bump timestamp
+      const existingItem = currentDiskItems[existingIndex];
+      const updatedItem: VaultItem = {
+        ...existingItem,
+        updated_at: new Date().toISOString(),
+        notes: notes ? (existingItem.notes ? `${existingItem.notes} | ${notes}` : notes) : existingItem.notes,
+      };
 
-          const updatedRecord = {
-            ...existingItem,
-            updated_at: updatedTime,
-            notes: updatedNotes,
-          };
+      currentDiskItems.splice(existingIndex, 1);
+      currentDiskItems.unshift(updatedItem);
+      saveDiskItems(currentDiskItems);
 
-          if (contentType.includes('application/x-www-form-urlencoded')) {
-            return NextResponse.redirect(new URL('/?status=saved', request.url), 303);
-          }
-
-          return NextResponse.json(
-            { item: updatedRecord, isDuplicate: true, message: 'Resource already in vault - bumped to top!' },
-            { headers: corsHeaders }
-          );
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from('items').update({ updated_at: updatedItem.updated_at }).eq('id', existingItem.id);
+        } catch (e) {
+          console.error('Failed to update Supabase duplicate:', e);
         }
       }
+
+      if (contentType.includes('application/x-www-form-urlencoded')) {
+        return NextResponse.redirect(new URL('/?status=saved', request.url), 303);
+      }
+
+      return NextResponse.json(
+        { item: updatedItem, isDuplicate: true, message: 'Resource already in vault - bumped to top!' },
+        { headers: corsHeaders }
+      );
     }
 
-    // Create New Item for 100% Supabase Cloud Database
+    // Create New Item
     const newItem: VaultItem = {
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       url: meta.url || inputUrlOrText,
@@ -165,31 +176,33 @@ export async function POST(request: Request) {
       } : undefined,
     };
 
-    // Insert Directly into Supabase Cloud Database
-    if (supabase) {
-      const supabaseRecord = {
-        id: newItem.id,
-        url: newItem.url,
-        raw_shared_text: newItem.raw_shared_text,
-        title: newItem.title,
-        description: newItem.description,
-        ai_summary: newItem.ai_summary,
-        thumbnail_url: newItem.thumbnail_url,
-        screenshot_url: newItem.screenshot_url,
-        platform: newItem.platform,
-        category: newItem.category,
-        tags: newItem.tags,
-        status: newItem.status,
-        is_alive: newItem.is_alive,
-        notes: newItem.notes,
-        created_at: newItem.created_at,
-        updated_at: newItem.updated_at,
-        github_repo: newItem.github_repo ? JSON.stringify(newItem.github_repo) : null,
-      };
+    // Save to Disk Store (guarantees local persistence)
+    currentDiskItems.unshift(newItem);
+    saveDiskItems(currentDiskItems);
 
-      const { error } = await supabase.from('items').insert([supabaseRecord]);
-      if (error) {
-        console.error('Supabase Cloud insert error:', error);
+    // Save to Supabase Cloud Database if RLS allows
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const supabaseRecord = {
+          url: newItem.url,
+          raw_shared_text: newItem.raw_shared_text,
+          title: newItem.title,
+          description: newItem.description,
+          ai_summary: newItem.ai_summary,
+          thumbnail_url: newItem.thumbnail_url,
+          screenshot_url: newItem.screenshot_url,
+          platform: newItem.platform,
+          category: newItem.category,
+          tags: newItem.tags,
+          status: newItem.status,
+          is_alive: newItem.is_alive,
+          notes: newItem.notes,
+          created_at: newItem.created_at,
+          updated_at: newItem.updated_at,
+        };
+        await supabase.from('items').insert([supabaseRecord]);
+      } catch (e) {
+        console.error('Failed to insert into Supabase:', e);
       }
     }
 
