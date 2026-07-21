@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0d1117;
+  --foreground: #c9d1d9;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom GitHub Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8b949e;
+}
+
+/* Custom Glassmorphism & Card Utility Classes */
+.gh-card {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.gh-card:hover {
+  border-color: #8b949e;
+}
+
+.gh-btn-primary {
+  background-color: #238636;
+  color: #ffffff;
+  border: 1px solid rgba(240, 246, 252, 0.1);
+  border-radius: 6px;
+  font-weight: 500;
+  padding: 6px 14px;
+  transition: background-color 0.15s cubic-bezier(0.3, 0, 0.8, 0.15);
+}
+
+.gh-btn-primary:hover {
+  background-color: #2ea043;
+}
+
+.gh-btn-secondary {
+  background-color: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-weight: 500;
+  padding: 6px 14px;
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+
+.gh-btn-secondary:hover {
+  background-color: #30363d;
+  border-color: #8b949e;
+  color: #f0f6fc;
+}
+
+.gh-input {
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  border-radius: 6px;
+  padding: 6px 12px;
+  outline: none;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.gh-input:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.3);
+}
+
+/* GitHub Language Color Dots */
+.lang-dot-python { background-color: #3572A5; }
+.lang-dot-typescript { background-color: #3178c6; }
+.lang-dot-javascript { background-color: #f1e05a; }
+.lang-dot-rust { background-color: #dea584; }
+.lang-dot-go { background-color: #00ADD8; }
+.lang-dot-cpp { background-color: #f34b7d; }
+.lang-dot-html { background-color: #e34c26; }
+.lang-dot-css { background-color: #563d7c; }
+.lang-dot-default { background-color: #8b949e; }

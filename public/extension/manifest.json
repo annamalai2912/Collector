@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Link Vault Collector",
+  "version": "1.0.0",
+  "description": "Right-click any link or web page to immediately save it to your Link Vault Collector.",
+  "permissions": ["contextMenus", "notifications", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Save to Collector"
+  }
+}
