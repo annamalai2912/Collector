@@ -22,46 +22,45 @@ export async function GET(request: Request) {
   const platform = searchParams.get('platform');
   const query = searchParams.get('q')?.toLowerCase();
 
-  let results: VaultItem[] = [];
-  let fetchedFromSupabase = false;
+  const diskItems = getDiskItems();
+  let supabaseItems: VaultItem[] = [];
 
   if (isSupabaseConfigured && supabase) {
     try {
-      let builder = supabase.from('items').select('*').order('created_at', { ascending: false });
-
-      if (category && category !== 'all') builder = builder.eq('category', category);
-      if (status && status !== 'all') builder = builder.eq('status', status);
-      if (platform && platform !== 'all') builder = builder.eq('platform', platform);
-
-      const { data, error } = await builder;
-
-      if (!error && data && data.length > 0) {
-        results = data as VaultItem[];
-        fetchedFromSupabase = true;
+      const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
+      if (!error && data) {
+        supabaseItems = data as VaultItem[];
       }
     } catch (e) {
-      console.error('Supabase query exception:', e);
+      console.error('Supabase query error:', e);
     }
   }
 
-  // Fallback to persistent disk store if Supabase returned empty/error
-  if (!fetchedFromSupabase) {
-    let diskItems = getDiskItems();
+  // Merge items from both Disk Store and Supabase to guarantee zero data loss
+  const itemMap = new Map<string, VaultItem>();
+  
+  // Add disk items first
+  diskItems.forEach((item) => itemMap.set(item.id, item));
+  // Add/override with Supabase items
+  supabaseItems.forEach((item) => itemMap.set(item.id, item));
 
-    if (category && category !== 'all') {
-      diskItems = diskItems.filter((i) => i.category === category);
-    }
-    if (status && status !== 'all') {
-      diskItems = diskItems.filter((i) => i.status === status);
-    }
-    if (platform && platform !== 'all') {
-      diskItems = diskItems.filter((i) => i.platform === platform);
-    }
-    results = diskItems;
+  let combinedResults = Array.from(itemMap.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
+  // Apply filters
+  if (category && category !== 'all') {
+    combinedResults = combinedResults.filter((i) => i.category === category);
+  }
+  if (status && status !== 'all') {
+    combinedResults = combinedResults.filter((i) => i.status === status);
+  }
+  if (platform && platform !== 'all') {
+    combinedResults = combinedResults.filter((i) => i.platform === platform);
   }
 
   if (query) {
-    results = results.filter((item) =>
+    combinedResults = combinedResults.filter((item) =>
       item.title.toLowerCase().includes(query) ||
       item.description?.toLowerCase().includes(query) ||
       item.notes?.toLowerCase().includes(query) ||
@@ -69,7 +68,7 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ items: results, isSupabase: fetchedFromSupabase }, { headers: corsHeaders });
+  return NextResponse.json({ items: combinedResults }, { headers: corsHeaders });
 }
 
 export async function POST(request: Request) {
@@ -107,7 +106,7 @@ export async function POST(request: Request) {
 
     // DUPLICATE AVOIDANCE CHECK
     const currentDiskItems = getDiskItems();
-    const normalizedTargetUrl = meta.url.toLowerCase().replace(/\/$/, '');
+    const normalizedTargetUrl = (meta.url || inputUrlOrText).toLowerCase().replace(/\/$/, '');
 
     const existingIndex = currentDiskItems.findIndex((item) => {
       const itemUrl = (item.url || '').toLowerCase().replace(/\/$/, '');
@@ -148,16 +147,16 @@ export async function POST(request: Request) {
     // Create New Item
     const newItem: VaultItem = {
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      url: meta.url,
+      url: meta.url || inputUrlOrText,
       raw_shared_text: inputUrlOrText,
-      title: meta.title,
-      description: meta.description,
-      ai_summary: meta.ai_summary,
-      thumbnail_url: meta.thumbnail_url,
+      title: meta.title || 'Saved Resource',
+      description: meta.description || 'Saved resource tool.',
+      ai_summary: meta.ai_summary || '',
+      thumbnail_url: meta.thumbnail_url || '',
       screenshot_url: screenshot_url || undefined,
-      platform: meta.platform,
-      category: (categoryInput as any) || meta.category,
-      tags: tagsInput || meta.tags,
+      platform: meta.platform || 'generic',
+      category: (categoryInput as any) || meta.category || 'Open Source',
+      tags: tagsInput || meta.tags || ['saved'],
       status: 'to_explore',
       is_alive: true,
       notes: notes || undefined,
@@ -177,11 +176,11 @@ export async function POST(request: Request) {
       } : undefined,
     };
 
-    // Save to Disk Store
+    // Save to Disk Store (guarantees local persistence)
     currentDiskItems.unshift(newItem);
     saveDiskItems(currentDiskItems);
 
-    // Save to Supabase
+    // Save to Supabase Cloud Database if configured
     if (isSupabaseConfigured && supabase) {
       try {
         await supabase.from('items').insert([newItem]);
