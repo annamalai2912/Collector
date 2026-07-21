@@ -1,7 +1,11 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+// Default Supabase Cloud credentials for 100% instant cross-device cloud sync
+const DEFAULT_SUPABASE_URL = 'https://xpmiwaydervbhvrhzriu.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_d51TpKNxMjswJcT2p6vNPA_BQg5WTR-';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -26,7 +30,6 @@ export interface VaultItem {
   notes?: string;
   created_at: string;
   updated_at: string;
-  // Extended GitHub repo fields if platform is github
   github_repo?: {
     repo_name: string;
     owner: string;

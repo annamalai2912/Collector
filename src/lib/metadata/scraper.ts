@@ -3,6 +3,7 @@ import { fetchGitHubRepoInfo, GitHubRepoDetails } from '../github/api';
 import { generateAISummary, autoClassifyCategoryAndTags } from '../tools/aiSummarizer';
 import { extractLinkFromText, unwrapSocialRedirectUrl } from './linkExtractor';
 import { ensureAbsoluteUrl } from '../utils/url';
+import { decodeHtmlEntities } from '../utils/htmlDecoder';
 
 export interface ScrapedMetadata {
   url: string;
@@ -62,7 +63,7 @@ async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
         realOgImage = imageMatch[1].replace(/&amp;/g, '&');
       }
       if (titleMatch && titleMatch[1]) {
-        realOgTitle = titleMatch[1].replace(/&amp;/g, '&');
+        realOgTitle = decodeHtmlEntities(titleMatch[1]);
       }
     }
   } catch (e) {
@@ -79,10 +80,13 @@ async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
     }
   } catch {}
 
-  const title = realOgTitle || cleanNotes || postHandle;
-  const description = cleanNotes
+  const rawTitle = realOgTitle || cleanNotes || postHandle;
+  const title = decodeHtmlEntities(rawTitle);
+
+  const rawDescription = cleanNotes
     ? `${cleanNotes} (Saved from Instagram)`
     : realOgTitle || `Instagram media resource. Captured from Instagram for quick exploration.`;
+  const description = decodeHtmlEntities(rawDescription);
 
   const category = targetUrl.includes('/reel/') ? 'Reels/Shorts' : 'Design Inspiration';
   const tags = ['instagram', 'social-media', 'reels', 'design'];
@@ -125,8 +129,8 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
 
       return {
         url: ensureAbsoluteUrl(ghRepo.html_url),
-        title: `${ghRepo.owner}/${ghRepo.repo_name}`,
-        description: notesDesc || `Open-source GitHub repository by ${ghRepo.owner} (${ghRepo.stars.toLocaleString()} stars).`,
+        title: decodeHtmlEntities(`${ghRepo.owner}/${ghRepo.repo_name}`),
+        description: decodeHtmlEntities(notesDesc || `Open-source GitHub repository by ${ghRepo.owner} (${ghRepo.stars.toLocaleString()} stars).`),
         ai_summary,
         thumbnail_url: bannerUrl,
         platform,
@@ -137,7 +141,7 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
     }
   }
 
-  // Generic OpenGraph scraping with Mobile User-Agent Header
+  // Generic OpenGraph scraping
   try {
     const options = {
       url: targetUrl,
@@ -153,18 +157,20 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
       domainName = new URL(targetUrl).hostname.replace(/^www\./, '');
     } catch {}
 
-    let title = result.ogTitle || result.twitterTitle || '';
-    if (!title || title.includes('l.threads.com') || title.includes('l.threads.net')) {
-      title = extracted.cleanNotes || `Resource (${domainName})`;
+    let rawTitle = result.ogTitle || result.twitterTitle || '';
+    if (!rawTitle || rawTitle.includes('l.threads.com') || rawTitle.includes('l.threads.net')) {
+      rawTitle = extracted.cleanNotes || `Resource (${domainName})`;
     }
+    const title = decodeHtmlEntities(rawTitle);
 
-    let description = result.ogDescription || result.twitterDescription || '';
-    if (extracted.cleanNotes && !description.includes(extracted.cleanNotes)) {
-      description = description ? `${extracted.cleanNotes} — ${description}` : extracted.cleanNotes;
+    let rawDescription = result.ogDescription || result.twitterDescription || '';
+    if (extracted.cleanNotes && !rawDescription.includes(extracted.cleanNotes)) {
+      rawDescription = rawDescription ? `${extracted.cleanNotes} — ${rawDescription}` : extracted.cleanNotes;
     }
-    if (!description || description.includes('l.threads.com') || description.includes('l.threads.net')) {
-      description = `Resource captured from ${domainName}. Explore metadata and key takeaways.`;
+    if (!rawDescription || rawDescription.includes('l.threads.com') || rawDescription.includes('l.threads.net')) {
+      rawDescription = `Resource captured from ${domainName}. Explore metadata and key takeaways.`;
     }
+    const description = decodeHtmlEntities(rawDescription);
 
     let thumbnail_url = result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url || '';
     const { category, tags } = autoClassifyCategoryAndTags(title, description, targetUrl);
@@ -191,8 +197,8 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
       domainName = new URL(targetUrl).hostname.replace(/^www\./, '');
     } catch {}
 
-    const title = extracted.cleanNotes || `Resource (${domainName})`;
-    const description = extracted.cleanNotes || `Saved resource from ${domainName}. Zero-friction link capture.`;
+    const title = decodeHtmlEntities(extracted.cleanNotes || `Resource (${domainName})`);
+    const description = decodeHtmlEntities(extracted.cleanNotes || `Saved resource from ${domainName}. Zero-friction link capture.`);
     const { category, tags } = autoClassifyCategoryAndTags(title, description, targetUrl);
 
     return {
