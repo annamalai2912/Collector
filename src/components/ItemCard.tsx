@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { VaultItem } from '@/lib/supabase/client';
 import { RepoCard } from './RepoCard';
 import { decodeHtmlEntities } from '@/lib/utils/htmlDecoder';
@@ -39,8 +39,18 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   viewMode,
 }) => {
   const [showAISummary, setShowAISummary] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [bannerSrc, setBannerSrc] = useState<string>(
+    item.thumbnail_url || getFallbackBannerImage(item.platform, item.category)
+  );
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    setBannerSrc(item.thumbnail_url || getFallbackBannerImage(item.platform, item.category));
+  }, [item.thumbnail_url, item.platform, item.category]);
+
+  const handleImageError = () => {
+    setBannerSrc(getFallbackBannerImage(item.platform, item.category));
+  };
 
   // If this item is a GitHub Repository, render the specialized RepoCard
   if (item.github_repo || item.platform === 'github') {
@@ -107,10 +117,6 @@ export const ItemCard: React.FC<ItemCardProps> = ({
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const displayImageUrl = imageError || !item.thumbnail_url
-    ? getFallbackBannerImage(item.platform, item.category)
-    : item.thumbnail_url;
-
   return (
     <>
       <div
@@ -161,13 +167,13 @@ export const ItemCard: React.FC<ItemCardProps> = ({
             <span>{getRelativeDate(item.created_at)}</span>
           </div>
 
-          {/* Guaranteed High-Resolution Banner Image Container */}
+          {/* 100% Guaranteed High-Resolution Image Banner */}
           <div className="relative rounded-lg overflow-hidden border border-[#30363d] bg-[#0d1117] group/img">
             <img
-              src={displayImageUrl}
+              src={bannerSrc}
               alt={formattedTitle}
               className="w-full h-36 object-cover group-hover/img:scale-105 transition duration-300 cursor-pointer"
-              onError={() => setImageError(true)}
+              onError={handleImageError}
               onClick={() => setIsLightboxOpen(true)}
             />
           </div>
@@ -257,13 +263,13 @@ export const ItemCard: React.FC<ItemCardProps> = ({
       </div>
 
       {/* Lightbox Modal for Full-Screen Image View */}
-      {isLightboxOpen && displayImageUrl && (
+      {isLightboxOpen && bannerSrc && (
         <div
           className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setIsLightboxOpen(false)}
         >
           <img
-            src={displayImageUrl}
+            src={bannerSrc}
             alt={formattedTitle}
             className="max-w-full max-h-full rounded-lg object-contain border border-[#30363d] shadow-2xl"
           />
