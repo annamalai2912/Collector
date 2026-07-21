@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { VaultItem } from '@/lib/supabase/client';
+import { VaultItem, supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { Header } from '@/components/Header';
 import { FilterBar } from '@/components/FilterBar';
 import { ItemCard } from '@/components/ItemCard';
@@ -19,6 +19,7 @@ import { ExportModal } from '@/components/ExportModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
 import { ExtensionModal } from '@/components/ExtensionModal';
 import { MobileSetupModal } from '@/components/MobileSetupModal';
+import { VaultKeyModal } from '@/components/VaultKeyModal';
 import { Loader2, Bookmark, Plus } from 'lucide-react';
 
 export default function Home() {
@@ -26,6 +27,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'repos' | 'snippets' | 'stacks'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  // Multi-Device Vault Sync Key State
+  const [vaultKey, setVaultKey] = useState('collector-master');
 
   // Filter & Sorting States
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,12 +48,24 @@ export default function Home() {
   const [isCommandSearchOpen, setIsCommandSearchOpen] = useState(false);
   const [isExtensionOpen, setIsExtensionOpen] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isVaultKeyOpen, setIsVaultKeyOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [qrModalData, setQrModalData] = useState<{ isOpen: boolean; url: string; title: string }>({
     isOpen: false,
     url: '',
     title: '',
   });
+
+  // Load Vault Key from localStorage
+  useEffect(() => {
+    const savedKey = localStorage.getItem('collector_vault_key');
+    if (savedKey) setVaultKey(savedKey);
+  }, []);
+
+  const handleSaveVaultKey = (key: string) => {
+    setVaultKey(key);
+    localStorage.setItem('collector_vault_key', key);
+  };
 
   // Fetch Items (Silent background sync mode supported)
   const loadItems = async (silent = false) => {
@@ -77,9 +93,29 @@ export default function Home() {
     // Background poll every 5 seconds for background extension items
     const pollInterval = setInterval(() => loadItems(true), 5000);
 
+    // Supabase Realtime Postgres Broadcast Channel
+    let channel: any = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        channel = supabase
+          .channel('realtime-items-sync')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'items' },
+            () => loadItems(true)
+          )
+          .subscribe();
+      } catch (e) {
+        console.error('Realtime subscription error:', e);
+      }
+    }
+
     return () => {
       window.removeEventListener('focus', handleFocus);
       clearInterval(pollInterval);
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
     };
   }, []);
 
@@ -218,6 +254,7 @@ export default function Home() {
         onTriggerSearch={() => setIsCommandSearchOpen(true)}
         onOpenExtension={() => setIsExtensionOpen(true)}
         onOpenMobile={() => setIsMobileOpen(true)}
+        onOpenVaultKey={() => setIsVaultKeyOpen(true)}
         itemCounts={counts}
       />
 
@@ -364,6 +401,13 @@ export default function Home() {
       <MobileSetupModal
         isOpen={isMobileOpen}
         onClose={() => setIsMobileOpen(false)}
+      />
+
+      <VaultKeyModal
+        isOpen={isVaultKeyOpen}
+        onClose={() => setIsVaultKeyOpen(false)}
+        vaultKey={vaultKey}
+        onSaveVaultKey={handleSaveVaultKey}
       />
     </div>
   );

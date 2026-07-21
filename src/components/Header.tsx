@@ -13,6 +13,7 @@ import {
   HelpCircle,
   Puzzle,
   Smartphone,
+  Lock,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -26,6 +27,7 @@ interface HeaderProps {
   onTriggerSearch: () => void;
   onOpenExtension: () => void;
   onOpenMobile: () => void;
+  onOpenVaultKey: () => void;
   itemCounts: { all: number; repos: number };
 }
 
@@ -40,6 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   onTriggerSearch,
   onOpenExtension,
   onOpenMobile,
+  onOpenVaultKey,
   itemCounts,
 }) => {
   return (
@@ -124,9 +127,17 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             <button
+              onClick={onOpenVaultKey}
+              title="Multi-Device Sync Key & Passcode"
+              className="gh-btn-secondary text-xs py-1.5 px-2.5 flex items-center font-medium"
+            >
+              <Lock className="w-3.5 h-3.5 mr-1.5 text-[#3fb950]" /> Sync Key
+            </button>
+
+            <button
               onClick={onOpenExtension}
               title="Install Extension / Plugin"
-              className="gh-btn-secondary text-xs py-1.5 px-2.5 flex items-center font-medium"
+              className="gh-btn-secondary text-xs py-1.5 px-2.5 hidden sm:flex items-center font-medium"
             >
               <Puzzle className="w-3.5 h-3.5 mr-1.5 text-[#3fb950]" /> Extension
             </button>
