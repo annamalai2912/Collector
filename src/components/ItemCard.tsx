@@ -39,6 +39,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   viewMode,
 }) => {
   const [showAISummary, setShowAISummary] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const proxyUrl = (rawUrl: string) => {
     if (!rawUrl) return '';
     // GitHub og images and Unsplash CDN load fine — skip proxy for those
