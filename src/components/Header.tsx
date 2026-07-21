@@ -48,8 +48,15 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo & Title */}
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-[#238636] flex items-center justify-center text-white shadow">
-              <Bookmark className="w-4 h-4 fill-white" />
+            <div className="w-9 h-9 rounded-lg overflow-hidden border border-[#30363d] bg-[#0d1117] flex items-center justify-center shadow-lg group shrink-0">
+              <img
+                src="/logo.png"
+                alt="Collector Logo"
+                className="w-full h-full object-cover group-hover:scale-110 transition duration-300"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center space-x-2">
