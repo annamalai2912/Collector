@@ -37,7 +37,11 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 
         {/* Content */}
         <p className="text-xs text-[#8b949e] leading-relaxed">
-          Are you sure you want to delete <strong className="text-[#f0f6fc] font-semibold">{itemTitle}</strong> from your Link Vault Collector? This action cannot be undone.
+          Are you sure you want to delete{' '}
+          <strong className="text-[#f0f6fc] font-semibold">
+            {itemTitle.length > 80 ? itemTitle.substring(0, 80) + '…' : itemTitle}
+          </strong>{' '}
+          from your Link Vault Collector? This action cannot be undone.
         </p>
 
         {/* Actions */}

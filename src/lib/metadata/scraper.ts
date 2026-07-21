@@ -3,7 +3,7 @@ import { fetchGitHubRepoInfo, GitHubRepoDetails } from '../github/api';
 import { generateAISummary, autoClassifyCategoryAndTags } from '../tools/aiSummarizer';
 import { extractLinkFromText, unwrapSocialRedirectUrl } from './linkExtractor';
 import { ensureAbsoluteUrl } from '../utils/url';
-import { decodeHtmlEntities } from '../utils/htmlDecoder';
+import { decodeHtmlEntities, cleanInstagramTitle, cleanInstagramDescription } from '../utils/htmlDecoder';
 import { getFallbackBannerImage } from '../utils/bannerFallback';
 
 export interface ScrapedMetadata {
@@ -52,23 +52,17 @@ async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
     console.error('Instagram meta scrape exception:', e);
   }
 
-  let postHandle = 'Instagram Resource';
-  try {
-    const pathParts = new URL(targetUrl).pathname.split('/').filter(Boolean);
-    if (pathParts.length >= 2) {
-      postHandle = `Instagram ${pathParts[0] === 'reel' ? 'Reel' : 'Post'} (${pathParts[1]})`;
-    } else if (pathParts.length === 1) {
-      postHandle = `@${pathParts[0]} on Instagram`;
-    }
-  } catch {}
+  // Build a clean short title from the og:title (strips caption body)
+  const title = cleanNotes
+    ? decodeHtmlEntities(cleanNotes).split(':')[0].trim()
+    : cleanInstagramTitle(realOgTitle);
 
-  const rawTitle = realOgTitle || cleanNotes || postHandle;
-  const title = decodeHtmlEntities(rawTitle);
-
-  const rawDescription = cleanNotes
-    ? `${cleanNotes} (Saved from Instagram)`
-    : realOgTitle || `Instagram media resource. Captured from Instagram for quick exploration.`;
-  const description = decodeHtmlEntities(rawDescription);
+  // Build a short readable description
+  const description = realOgTitle
+    ? cleanInstagramDescription(realOgTitle)
+    : cleanNotes
+    ? decodeHtmlEntities(cleanNotes).substring(0, 160)
+    : 'Saved Instagram post.';
 
   const category = targetUrl.includes('/reel/') ? 'Reels/Shorts' : 'Design Inspiration';
   const tags = ['instagram', 'social-media', 'reels', 'design'];

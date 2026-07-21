@@ -21,6 +21,7 @@ import { ExtensionModal } from '@/components/ExtensionModal';
 import { MobileSetupModal } from '@/components/MobileSetupModal';
 import { VaultKeyModal } from '@/components/VaultKeyModal';
 import { Loader2, Bookmark, Plus } from 'lucide-react';
+import { cleanInstagramTitle, decodeHtmlEntities } from '@/lib/utils/htmlDecoder';
 
 export default function Home() {
   const [items, setItems] = useState<VaultItem[]>([]);
@@ -331,7 +332,7 @@ export default function Home() {
                     item={item}
                     onUpdateStatus={handleUpdateStatus}
                     onUpdateCategory={handleUpdateCategory}
-                    onDeleteItem={(id) => onRequestDeleteItem(id, item.title)}
+                    onDeleteItem={(id) => onRequestDeleteItem(id, cleanInstagramTitle(decodeHtmlEntities(item.title)))}
                     onOpenQRCode={(url, title) => setQrModalData({ isOpen: true, url, title })}
                     viewMode={viewMode}
                   />
