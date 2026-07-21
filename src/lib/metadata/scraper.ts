@@ -37,6 +37,69 @@ export function getFallbackBannerImage(platform: string, category: string, repoF
   }
 }
 
+// Scrape real og:image & og:title from Instagram links using Mobile User-Agent headers
+async function scrapeInstagramMetadata(targetUrl: string, cleanNotes: string) {
+  let realOgImage = '';
+  let realOgTitle = '';
+
+  try {
+    const res = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+
+    if (res.ok) {
+      const html = await res.text();
+      const imageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+      const titleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+
+      if (imageMatch && imageMatch[1]) {
+        realOgImage = imageMatch[1].replace(/&amp;/g, '&');
+      }
+      if (titleMatch && titleMatch[1]) {
+        realOgTitle = titleMatch[1].replace(/&amp;/g, '&');
+      }
+    }
+  } catch (e) {
+    console.error('Instagram meta scrape exception:', e);
+  }
+
+  let postHandle = 'Instagram Resource';
+  try {
+    const pathParts = new URL(targetUrl).pathname.split('/').filter(Boolean);
+    if (pathParts.length >= 2) {
+      postHandle = `Instagram ${pathParts[0] === 'reel' ? 'Reel' : 'Post'} (${pathParts[1]})`;
+    } else if (pathParts.length === 1) {
+      postHandle = `@${pathParts[0]} on Instagram`;
+    }
+  } catch {}
+
+  const title = realOgTitle || cleanNotes || postHandle;
+  const description = cleanNotes
+    ? `${cleanNotes} (Saved from Instagram)`
+    : realOgTitle || `Instagram media resource. Captured from Instagram for quick exploration.`;
+
+  const category = targetUrl.includes('/reel/') ? 'Reels/Shorts' : 'Design Inspiration';
+  const tags = ['instagram', 'social-media', 'reels', 'design'];
+  const finalThumbnail = realOgImage || getFallbackBannerImage('instagram', category);
+
+  return {
+    url: targetUrl,
+    title,
+    description,
+    ai_summary: generateAISummary(title, description, targetUrl),
+    thumbnail_url: finalThumbnail,
+    platform: 'instagram' as const,
+    category: category as any,
+    tags,
+  };
+}
+
 export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedMetadata> {
   const extracted = extractLinkFromText(inputUrlOrText);
   let rawTarget = extracted.targetUrl || inputUrlOrText.trim();
@@ -48,9 +111,10 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
 
   if (targetUrl.includes('instagram.com')) {
     platform = 'instagram';
+    return await scrapeInstagramMetadata(targetUrl, extracted.cleanNotes);
   }
 
-  // Check if target is a GitHub repo first
+  // Check if target is a GitHub repo
   if (targetUrl.includes('github.com')) {
     const ghRepo = await fetchGitHubRepoInfo(targetUrl);
     if (ghRepo) {
@@ -73,41 +137,15 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
     }
   }
 
-  // Instagram Post / Reel Handler
-  if (platform === 'instagram' || targetUrl.includes('instagram.com')) {
-    let postHandle = 'Instagram Resource';
-    try {
-      const pathParts = new URL(targetUrl).pathname.split('/').filter(Boolean);
-      if (pathParts.length >= 2) {
-        postHandle = `Instagram ${pathParts[0] === 'reel' ? 'Reel' : 'Post'} (${pathParts[1]})`;
-      } else if (pathParts.length === 1) {
-        postHandle = `@${pathParts[0]} on Instagram`;
-      }
-    } catch {}
-
-    const title = extracted.cleanNotes || postHandle;
-    const description = extracted.cleanNotes
-      ? `${extracted.cleanNotes} (Saved from Instagram)`
-      : `Instagram media resource. Captured from Instagram for quick exploration.`;
-
-    const category = targetUrl.includes('/reel/') ? 'Reels/Shorts' : 'Design Inspiration';
-    const tags = ['instagram', 'social-media', 'reels', 'design'];
-
-    return {
-      url: targetUrl,
-      title,
-      description,
-      ai_summary: generateAISummary(title, description, targetUrl),
-      thumbnail_url: getFallbackBannerImage('instagram', category),
-      platform: 'instagram',
-      category,
-      tags,
-    };
-  }
-
-  // Generic OpenGraph scraping for non-GitHub & non-Instagram links
+  // Generic OpenGraph scraping with Mobile User-Agent Header
   try {
-    const options = { url: targetUrl, timeout: 7000 };
+    const options = {
+      url: targetUrl,
+      timeout: 7000,
+      headers: {
+        'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+      },
+    };
     const { result } = await ogs(options);
 
     let domainName = 'web resource';
@@ -147,7 +185,7 @@ export async function fetchUrlMetadata(inputUrlOrText: string): Promise<ScrapedM
       tags,
     };
   } catch {
-    // Fallback if scraping fails or site blocks scrapers
+    // Fallback if scraping fails
     let domainName = 'web resource';
     try {
       domainName = new URL(targetUrl).hostname.replace(/^www\./, '');
